@@ -34,6 +34,9 @@
         input[type="date"].inline-edit, input[type="time"].inline-edit { cursor: pointer; }
         
         @media print { .no-print { display: none !important; } .preview-overlay { position: static; background: white; } .preview-paper { box-shadow: none; margin: 0; width: 100%; padding: 10mm; } }
+
+        /* 新增：未付帳名單樣式 */
+        .unpaid-list-dropdown { position: absolute; top: 100%; left: 0; right: 0; background: white; border-radius: 1rem; border: 1px solid #E2E8F0; shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1); z-index: 60; max-height: 300px; overflow-y: auto; margin-top: 0.5rem; padding: 0.5rem; }
     </style>
 </head>
 <body>
@@ -113,8 +116,30 @@
                 </div>
 
                 <div class="flex flex-wrap items-center justify-between mb-6 gap-4">
-                    <div class="flex items-center space-x-4">
-                        <div class="relative"><i class="fas fa-search absolute left-4 top-4 text-slate-400"></i><input type="text" v-model="searchKeyword" placeholder="精準搜尋客戶名稱 (完全一致)..." class="pl-12 pr-4 py-3 bg-white border-none rounded-2xl shadow-sm w-80 font-bold"></div>
+                    <div class="flex items-center space-x-4 relative">
+                        <!-- 搜尋與未收帳名單下拉 -->
+                        <div class="relative group">
+                            <i class="fas fa-search absolute left-4 top-4 text-slate-400"></i>
+                            <input type="text" v-model="searchKeyword" placeholder="精準搜尋客戶名稱..." class="pl-12 pr-4 py-3 bg-white border-none rounded-2xl shadow-sm w-80 font-bold">
+                            
+                            <!-- 新增：未收帳名單快速點選按鈕 -->
+                            <button @click="showUnpaidList = !showUnpaidList" class="ml-2 bg-rose-100 text-rose-600 px-4 py-3 rounded-2xl font-black hover:bg-rose-200 transition">
+                                <i class="fas fa-user-clock mr-1"></i> 未付帳名單
+                            </button>
+
+                            <!-- 新增：未收帳名單下拉內容 -->
+                            <div v-if="showUnpaidList" class="unpaid-list-dropdown shadow-2xl no-print">
+                                <div class="px-4 py-2 border-b border-slate-100 flex justify-between items-center">
+                                    <span class="text-xs font-black text-slate-400">點選客戶進行對帳 ({{ unpaidCustomers.length }})</span>
+                                    <button @click="showUnpaidList = false" class="text-slate-300 hover:text-slate-500"><i class="fas fa-times"></i></button>
+                                </div>
+                                <div v-if="unpaidCustomers.length === 0" class="p-4 text-center text-slate-400 text-sm font-bold">目前沒有未結清客戶</div>
+                                <div v-for="name in unpaidCustomers" :key="name" @click="selectUnpaidCustomer(name)" class="px-4 py-3 hover:bg-rose-50 cursor-pointer flex justify-between items-center border-b border-slate-50 last:border-0">
+                                    <span class="font-black text-slate-700">{{ name }}</span>
+                                    <span class="text-[10px] bg-rose-500 text-white px-2 py-1 rounded-full font-bold">未收</span>
+                                </div>
+                            </div>
+                        </div>
                         <button @click="showPreview('records')" class="bg-slate-800 text-white px-6 py-3 rounded-2xl font-bold shadow-sm"><i class="fas fa-download mr-2"></i>下載清單/對帳報表</button>
                     </div>
                     <div v-if="searchKeyword && filteredRecords.length > 0" class="bg-orange-600 text-white px-6 py-4 rounded-3xl shadow-xl flex items-center space-x-8 animate-bounce-in">
@@ -153,18 +178,18 @@
                             class="day-cell"
                             @dragover.prevent="dragOver($event)"
                             @dragleave="dragLeave($event)"
-                            @drop="onDrop($event, day.date)">
+                            @drop.prevent="onDrop($event, day.date)">
                             
                             <div class="text-xs font-black mb-1 flex justify-between"><span :class="day.isToday ? 'text-blue-500' : 'text-slate-400'">{{ day.day }}</span><span v-if="day.appts.length > 0" class="badge-count">{{ day.appts.length }}</span></div>
                             <div class="space-y-1 h-16 overflow-y-auto">
                                 <div v-for="appt in day.appts" :key="appt.id" 
                                     :draggable="!appt.isPeriodic" 
                                     @dragstart="onDragStart($event, appt)"
-                                    class="appt-item group text-[9px] p-1 rounded font-bold flex justify-between items-center" 
-                                    :class="appt.isPeriodic ? 'bg-orange-100 text-orange-700 border-l-2 border-orange-500' : 'bg-blue-100 text-blue-700'">
+                                    class="appt-item group text-[9px] p-1 rounded font-bold flex justify-between items-center z-10" 
+                                    :class="appt.isPeriodic ? 'bg-orange-100 text-orange-700 border-l-2 border-orange-500' : 'bg-blue-100 text-blue-700 cursor-move'">
                                     
                                     <span class="truncate pointer-events-none">{{ appt.time }} {{ appt.customer }}</span>
-                                    <button @click.stop.prevent="deleteItem('appointments', appt.id)" class="text-rose-500 hover:text-rose-700 px-1" title="刪除預約"><i class="fas fa-times-circle"></i></button>
+                                    <button type="button" @mousedown.stop @click.stop.prevent="deleteItem('appointments', appt.id)" class="text-rose-500 hover:text-rose-700 px-1 z-20 cursor-pointer" title="刪除預約"><i class="fas fa-times-circle pointer-events-none"></i></button>
                                 </div>
                             </div>
                         </div>
@@ -337,9 +362,11 @@
                 const currentYear = ref(new Date().getFullYear()); const currentMonth = ref(new Date().getMonth());
                 const previewType = ref(null); const searchKeyword = ref(""); const cheerQuote = ref("細節決定成敗，品質成就非凡。");
                 
+                // 新增：未付帳名單控制
+                const showUnpaidList = ref(false);
+
                 const newRecord = reactive({ date: new Date().toISOString().split('T')[0], customer: '', carNumber: '', carModel: '', carColor: '', item: '', price: null, isUnpaid: false });
                 const newAppt = reactive({ date: new Date().toISOString().split('T')[0], time: '10:00', customer: '', carModel: '', item: '', periodicDays: [] });
-                // 固定開支改為精確日期 date
                 const newExpense = reactive({ date: new Date().toISOString().split('T')[0], category: '藥水/耗材', amount: null, notes: '' });
 
                 onMounted(async () => {
@@ -355,10 +382,18 @@
                 const stats = computed(() => {
                     const monthStr = `${currentYear.value}-${String(currentMonth.value + 1).padStart(2, '0')}`;
                     const curMonthRecords = records.value.filter(r => r.date && r.date.startsWith(monthStr));
-                    const curMonthExpenses = expenses.value.filter(e => e.date && e.date.startsWith(monthStr)); // 開支改用 date
+                    const curMonthExpenses = expenses.value.filter(e => e.date && e.date.startsWith(monthStr));
                     const rev = curMonthRecords.reduce((s, r) => s + (Number(r.price) || 0), 0);
                     const cost = curMonthExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
                     return { totalRevenue: rev, totalCost: cost, totalCases: curMonthRecords.length, unpaidAmount: curMonthRecords.filter(r => r.isUnpaid).reduce((s, r) => s + (Number(r.price) || 0), 0), gap: Math.max(goal.targetRevenue - rev, 0), goalPercent: Math.min(Math.round((rev / goal.targetRevenue) * 100), 100) || 0, avgTicket: curMonthRecords.length ? Math.round(rev / curMonthRecords.length) : 0 };
+                });
+
+                // 新增：提取所有有未收帳紀錄的客戶名單 (不重複)
+                const unpaidCustomers = computed(() => {
+                    const names = records.value
+                        .filter(r => r.isUnpaid && r.customer)
+                        .map(r => r.customer.trim());
+                    return [...new Set(names)].sort();
                 });
 
                 // 工作紀錄過濾 (精準客戶搜尋)
@@ -376,7 +411,7 @@
 
                 const isReconciling = computed(() => searchKeyword.value.trim().length >= 1);
 
-                // 固定開支過濾 (依據 date)
+                // 固定開支過濾
                 const filteredExpenses = computed(() => {
                     const monthStr = `${currentYear.value}-${String(currentMonth.value + 1).padStart(2, '0')}`;
                     return expenses.value.filter(e => e.date && e.date.startsWith(monthStr)).sort((a,b) => b.date.localeCompare(a.date));
@@ -385,10 +420,9 @@
                 // 預約清單過濾
                 const sortedAppointments = computed(() => {
                     const monthStr = `${currentYear.value}-${String(currentMonth.value + 1).padStart(2, '0')}`;
-                    return appointments.value.filter(a => (a.date && a.date.startsWith(monthStr)) || a.isPeriodic).sort((a,b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+                    return appointments.value.filter(a => a.date && a.date.startsWith(monthStr) || a.isPeriodic).sort((a,b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
                 });
 
-                // 日曆渲染
                 const calendarDays = computed(() => {
                     const days = [];
                     const firstDayDate = new Date(currentYear.value, currentMonth.value, 1);
@@ -398,17 +432,24 @@
                         days.push({ day: prevMonthLastDay - i, date: '', isCurrentMonth: false, appts: [] }); 
                     }
                     const lastDayDate = new Date(currentYear.value, currentMonth.value + 1, 0);
+                    const d = new Date();
+                    const localToday = new Date(d.getTime() - (d.getTimezoneOffset() * 60000)).toISOString().split('T')[0];
+
                     for (let i = 1; i <= lastDayDate.getDate(); i++) {
-                        const d = new Date(currentYear.value, currentMonth.value, i); 
-                        const ds = d.toISOString().split('T')[0];
-                        const dow = d.getDay(); // 0-6
-                        const dayAppts = appointments.value.filter(a => (a.date === ds) || (a.isPeriodic && (a.periodicDays || []).includes(dow)));
-                        days.push({ day: i, date: ds, isCurrentMonth: true, isToday: ds === new Date().toISOString().split('T')[0], appts: dayAppts });
+                        const ds = `${currentYear.value}-${String(currentMonth.value + 1).padStart(2, '0')}-${String(i).padStart(2, '0')}`;
+                        const dow = new Date(currentYear.value, currentMonth.value, i).getDay();
+                        const dayAppts = appointments.value.filter(a => (a.date === ds && !a.isPeriodic) || (a.isPeriodic && (a.periodicDays || []).includes(dow)));
+                        days.push({ day: i, date: ds, isCurrentMonth: true, isToday: ds === localToday, appts: dayAppts });
                     }
                     return days;
                 });
 
-                // Firebase CRUD 操作
+                // 新增：選擇未付帳客戶
+                const selectUnpaidCustomer = (name) => {
+                    searchKeyword.value = name;
+                    showUnpaidList.value = false;
+                };
+
                 const addRecord = async () => { if (!newRecord.customer || !newRecord.price) return; await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'records'), { ...newRecord }); Object.assign(newRecord, { customer: '', carNumber: '', carModel: '', carColor: '', item: '', price: null, isUnpaid: false }); };
                 const updateRecord = async (r) => { if(r.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'records', r.id), { ...r }); };
                 const addAppointment = async () => { if (!newAppt.customer) return; await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'appointments'), { ...newAppt, isPeriodic: newAppt.periodicDays.length > 0 }); Object.assign(newAppt, { customer: '', carModel: '', item: '', periodicDays: [] }); };
@@ -417,7 +458,6 @@
                 const addExpense = async () => { if (!newExpense.amount) return; await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'expenses'), { ...newExpense }); newExpense.amount = null; newExpense.notes = ''; };
                 const updateExpense = async (e) => { if(e.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'expenses', e.id), { ...e }); };
                 
-                // 移除 iframe 會阻擋的 confirm，直接進行刪除確保功能正常
                 const deleteItem = async (col, id) => {
                     if(!id) return;
                     try {
@@ -427,26 +467,22 @@
                     }
                 };
 
-                // 拖放功能強化：使用 dataTransfer 傳遞 ID
-                const onDragStart = (e, appt) => {
-                    e.dataTransfer.setData('apptId', appt.id);
-                    e.dataTransfer.effectAllowed = "move";
+                let draggingAppt = null;
+                const onDragStart = (e, appt) => { 
+                    draggingAppt = appt; 
+                    e.dataTransfer.effectAllowed = "move"; 
+                    e.dataTransfer.setData('text/plain', appt.id);
                 };
                 const dragOver = (e) => { e.currentTarget.classList.add('drag-over-active'); };
                 const dragLeave = (e) => { e.currentTarget.classList.remove('drag-over-active'); };
-                const onDrop = async (e, targetDate) => {
+                const onDrop = async (e, date) => {
                     e.currentTarget.classList.remove('drag-over-active');
-                    const apptId = e.dataTransfer.getData('apptId');
-                    if (apptId && targetDate) {
-                        const appt = appointments.value.find(a => a.id === apptId);
-                        if (appt) {
-                            if (appt.isPeriodic) {
-                                console.log("週期性預約無法單獨拖移改變日期。");
-                            } else {
-                                appt.date = targetDate;
-                                await updateAppt(appt);
-                            }
+                    if (draggingAppt && date) {
+                        if (!draggingAppt.isPeriodic) {
+                            draggingAppt.date = date;
+                            await updateAppt(draggingAppt);
                         }
+                        draggingAppt = null;
                     }
                 };
 
@@ -458,6 +494,7 @@
                     filteredTotalSum: computed(() => filteredRecords.value.reduce((s,r) => s + (Number(r.price) || 0), 0)), 
                     filteredTotalUnpaid: computed(() => filteredRecords.value.filter(r => r.isUnpaid).reduce((s,r) => s + (Number(r.price) || 0), 0)), 
                     calendarDays, sortedAppointments, currentYear, currentMonth, newRecord, newAppt, newExpense, previewType, searchKeyword, goal, cheerQuote, isReconciling,
+                    showUnpaidList, unpaidCustomers, selectUnpaidCustomer,
                     previewTitle: computed(() => ({ records: '客戶對帳與工作明細表', appointments: '預約排程調度明細表', expenses: '固定支出結算分析表', dashboard: '營運成果總覽報告' }[previewType.value])), 
                     addRecord, updateRecord, addAppointment, updateAppt, toggleApptDay, addExpense, updateExpense, deleteItem, 
                     onDragStart, dragOver, dragLeave, onDrop,
