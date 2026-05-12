@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AS Coating | 專業汽車美容管理系統</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://unpkg.com/vue@3/dist/vue.global.js"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;700;900&family=Pacifico&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <style>
+        :root { --primary: #FF8E3C; --secondary: #00BAFF; --accent: #20C997; --bg: #F8FAFC; }
+        body { font-family: 'Noto Sans TC', sans-serif; background-color: var(--bg); color: #334155; }
+        .vibrant-gradient { background: linear-gradient(135deg, #FF8E3C, #FF5F6D); }
+        .quote-font { font-family: 'Pacifico', cursive; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; }
+        .day-cell { min-height: 110px; border-radius: 12px; background: white; border: 1px solid #E2E8F0; padding: 6px; position: relative; transition: all 0.2s; }
+        .day-cell.today { border: 2px solid var(--secondary); background: #F0F9FF; }
+        .day-cell.other-month { opacity: 0.3; background: #F1F5F9; }
+        .badge-count { position: absolute; top: 4px; right: 4px; background: var(--secondary); color: white; font-size: 9px; padding: 1px 4px; border-radius: 4px; font-weight: bold; }
+        
+        /* 拖移與交互樣式 */
+        .appt-item { cursor: grab; position: relative; transition: all 0.2s; margin-bottom: 2px; }
+        .appt-item:active { cursor: grabbing; opacity: 0.7; transform: scale(0.98); }
+        .drag-over-active { background-color: #FFF7ED !important; border-color: #FF8E3C !important; border-style: dashed !important; }
+        
+        .preview-overlay { background: rgba(15, 23, 42, 0.95); z-index: 100; position: fixed; inset: 0; overflow-y: auto; }
+        .preview-paper { background: white; width: 210mm; min-height: 297mm; padding: 20mm; margin: 2rem auto; box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5); color: #000; }
+        
+        /* 原地修改樣式強化 */
+        .inline-edit { background: transparent; border: none; width: 100%; font-weight: inherit; color: inherit; padding: 2px 4px; border-radius: 4px; outline: none; transition: background 0.2s, box-shadow 0.2s; }
+        .inline-edit:focus { background: white; box-shadow: 0 0 0 2px #FF8E3C; color: #334155; }
+        input[type="date"].inline-edit, input[type="time"].inline-edit { cursor: pointer; }
+        
+        @media print { .no-print { display: none !important; } .preview-overlay { position: static; background: white; } .preview-paper { box-shadow: none; margin: 0; width: 100%; padding: 10mm; } }
+    </style>
+</head>
+<body>
+    <div id="app" class="min-h-screen pb-20">
+        <!-- 導航 -->
+        <nav class="vibrant-gradient text-white p-4 sticky top-0 z-50 shadow-lg no-print">
+            <div class="container mx-auto flex flex-col md:flex-row justify-between items-center">
+                <div class="flex items-center space-x-3 mb-4 md:mb-0">
+                    <div class="bg-white p-2 rounded-2xl"><i class="fas fa-car-wash text-orange-500 text-xl"></i></div>
+                    <span class="text-2xl font-bold tracking-tighter uppercase">AS COATING</span>
+                </div>
+                <div class="flex space-x-1 overflow-x-auto w-full md:w-auto">
+                    <button v-for="tab in tabs" @click="currentTab = tab.id" :class="currentTab === tab.id ? 'bg-white text-orange-500' : 'hover:bg-white/20'" class="px-5 py-2 rounded-xl font-bold transition-all whitespace-nowrap">
+                        {{ tab.name }}
+                    </button>
+                </div>
+            </div>
+        </nav>
+
+        <div class="container mx-auto p-4 md:p-8">
+            <!-- 標頭資訊 -->
+            <div class="bg-white rounded-3xl p-6 mb-8 shadow-sm flex flex-col md:flex-row justify-between items-center border-l-8 border-orange-400 no-print">
+                <div class="flex items-center space-x-4">
+                    <div class="bg-slate-100 p-2 rounded-2xl flex items-center space-x-2">
+                        <button @click="changeMonth(-1)" class="p-2 hover:bg-white rounded-xl transition"><i class="fas fa-chevron-left"></i></button>
+                        <h2 class="text-2xl font-black text-slate-800 w-32 text-center">{{ currentYear }} / {{ currentMonth + 1 }}</h2>
+                        <button @click="changeMonth(1)" class="p-2 hover:bg-white rounded-xl transition"><i class="fas fa-chevron-right"></i></button>
+                    </div>
+                    <div><p class="text-slate-400 font-medium">目標達成：<span class="text-orange-500 font-bold">{{ stats.goalPercent }}%</span></p></div>
+                </div>
+                <div class="mt-4 md:mt-0 text-center"><p class="quote-font text-2xl text-orange-400">" {{ cheerQuote }} "</p></div>
+            </div>
+
+            <!-- 1. 店面總覽 -->
+            <div v-if="currentTab === 'dashboard'" class="animate-fadeIn">
+                <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 mb-8">
+                    <div class="bg-white p-6 rounded-3xl shadow-sm border-b-4 border-blue-400"><p class="text-slate-400 text-xs font-bold uppercase">本月累計營收</p><h3 class="text-3xl font-black text-blue-600">${{ stats.totalRevenue.toLocaleString() }}</h3></div>
+                    <div class="bg-white p-6 rounded-3xl shadow-sm border-b-4 border-slate-400"><p class="text-slate-400 text-xs font-bold uppercase">本月支出</p><h3 class="text-3xl font-black text-slate-600">${{ stats.totalCost.toLocaleString() }}</h3></div>
+                    <div class="bg-white p-6 rounded-3xl shadow-sm border-b-4 border-emerald-400"><p class="text-slate-400 text-xs font-bold uppercase">本月估計淨利</p><h3 class="text-3xl font-black text-emerald-600">${{ (stats.totalRevenue - stats.totalCost).toLocaleString() }}</h3></div>
+                    <div @click="jumpToUnpaid" class="bg-white p-6 rounded-3xl shadow-sm border-b-4 border-rose-400 cursor-pointer hover:bg-rose-50 transition"><p class="text-slate-400 text-xs font-bold uppercase">未收帳餘額</p><h3 class="text-3xl font-black text-rose-500">${{ stats.unpaidAmount.toLocaleString() }}</h3></div>
+                    <div class="bg-white p-6 rounded-3xl shadow-sm border-b-4 border-orange-400"><p class="text-slate-400 text-xs font-bold uppercase">業績目標差額</p><h3 class="text-3xl font-black text-orange-600">${{ stats.gap.toLocaleString() }}</h3></div>
+                </div>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                    <div class="lg:col-span-2 bg-white p-8 rounded-[2.5rem] shadow-sm">
+                        <div class="flex justify-between items-center mb-8"><h3 class="text-xl font-black text-slate-800">營運分析報表</h3><button @click="showPreview('dashboard')" class="bg-slate-800 text-white px-5 py-2 rounded-xl text-xs font-bold"><i class="fas fa-print mr-2"></i>生成詳細總覽報表</button></div>
+                        <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                            <div class="bg-slate-50 p-6 rounded-3xl"><p class="text-slate-400 text-xs font-bold mb-2">每日平均應達成營收</p><h4 class="text-3xl font-black text-blue-600">${{ Math.round(goal.targetRevenue / goal.workingDays).toLocaleString() }}</h4></div>
+                            <div class="bg-slate-50 p-6 rounded-3xl"><p class="text-slate-400 text-xs font-bold mb-2">建議進場台數</p><h4 class="text-3xl font-black text-emerald-500">{{ Math.ceil(stats.gap / (stats.avgTicket || 5000)) }} 台</h4></div>
+                            <div class="bg-slate-50 p-6 rounded-3xl md:col-span-2"><p class="text-slate-400 text-xs font-bold mb-2">單車平均實收收費 (自動計算)</p><h4 class="text-3xl font-black text-slate-700">${{ stats.avgTicket.toLocaleString() }}</h4></div>
+                        </div>
+                    </div>
+                    <div class="bg-orange-50 p-8 rounded-[2.5rem] shadow-sm flex flex-col items-center justify-center text-center border-2 border-dashed border-orange-200">
+                        <div class="bg-white p-4 rounded-full shadow-lg mb-6 text-orange-500 text-3xl"><i class="fas fa-fire"></i></div>
+                        <h3 class="text-2xl font-black text-orange-600 mb-2">老闆加油！</h3>
+                        <p class="text-slate-500 font-medium">本月已接待 {{ stats.totalCases }} 台車，<br>持續維持品質，業績自然滾滾來！</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 2. 工作紀錄 -->
+            <div v-if="currentTab === 'records'" class="animate-fadeIn">
+                <div class="bg-white p-6 rounded-3xl shadow-sm mb-8 no-print border-b-4 border-blue-500">
+                    <h3 class="font-black text-lg mb-4 text-slate-700">新增工作紀錄</h3>
+                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-3">
+                        <input type="date" v-model="newRecord.date" class="border p-3 rounded-xl text-sm bg-slate-50 font-bold">
+                        <input type="text" v-model="newRecord.customer" placeholder="客戶名稱" class="border p-3 rounded-xl text-sm">
+                        <input type="text" v-model="newRecord.carNumber" placeholder="車牌號碼" class="border p-3 rounded-xl text-sm uppercase">
+                        <input type="text" v-model="newRecord.carModel" placeholder="車種" class="border p-3 rounded-xl text-sm">
+                        <input type="text" v-model="newRecord.carColor" placeholder="顏色" class="border p-3 rounded-xl text-sm">
+                        <input type="number" v-model="newRecord.price" placeholder="金額" class="border p-3 rounded-xl text-sm font-bold text-blue-600">
+                    </div>
+                    <div class="flex space-x-3">
+                        <input type="text" v-model="newRecord.item" placeholder="施工項目與詳細備註" class="flex-grow border p-3 rounded-xl text-sm">
+                        <div class="flex items-center space-x-2 bg-rose-50 px-4 rounded-xl"><input type="checkbox" v-model="newRecord.isUnpaid" id="newUnpaid" class="w-5 h-5 accent-rose-500"><label for="newUnpaid" class="text-xs font-black text-rose-500 cursor-pointer">未收帳</label></div>
+                        <button @click="addRecord" class="vibrant-gradient text-white px-8 rounded-xl font-black">儲存紀錄</button>
+                    </div>
+                </div>
+
+                <div class="flex flex-wrap items-center justify-between mb-6 gap-4">
+                    <div class="flex items-center space-x-4">
+                        <div class="relative"><i class="fas fa-search absolute left-4 top-4 text-slate-400"></i><input type="text" v-model="searchKeyword" placeholder="精準搜尋客戶名稱 (完全一致)..." class="pl-12 pr-4 py-3 bg-white border-none rounded-2xl shadow-sm w-80 font-bold"></div>
+                        <button @click="showPreview('records')" class="bg-slate-800 text-white px-6 py-3 rounded-2xl font-bold shadow-sm"><i class="fas fa-download mr-2"></i>下載清單/對帳報表</button>
+                    </div>
+                    <div v-if="searchKeyword && filteredRecords.length > 0" class="bg-orange-600 text-white px-6 py-4 rounded-3xl shadow-xl flex items-center space-x-8 animate-bounce-in">
+                        <div><p class="text-[10px] opacity-70 font-bold">對帳客戶：{{ searchKeyword }}</p><p class="text-xl font-black">${{ filteredTotalUnpaid.toLocaleString() }} (未收)</p></div>
+                        <button @click="showPreview('records')" class="bg-white/20 px-4 py-2 rounded-xl text-xs font-bold">生成對帳單</button>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-3xl shadow-sm overflow-hidden">
+                    <table class="w-full text-left">
+                        <thead class="bg-slate-50 text-slate-400 text-xs font-black"><tr><th class="px-6 py-4">日期</th><th class="px-6 py-4">客戶名稱</th><th class="px-6 py-4">車號</th><th class="px-6 py-4">車種/顏色</th><th class="px-6 py-4">項目/備註</th><th class="px-6 py-4">金額</th><th class="px-6 py-4 text-center">未收</th><th class="px-6 py-4 text-center">操作</th></tr></thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <tr v-for="r in filteredRecords" :key="r.id" class="hover:bg-slate-50">
+                                <td class="px-6 py-4"><input type="date" v-model="r.date" @change="updateRecord(r)" class="inline-edit font-bold text-slate-600 text-xs"></td>
+                                <td class="px-6 py-4 font-black"><input type="text" v-model="r.customer" @change="updateRecord(r)" class="inline-edit font-black"></td>
+                                <td class="px-6 py-4 uppercase font-bold text-slate-600"><input type="text" v-model="r.carNumber" @change="updateRecord(r)" class="inline-edit uppercase"></td>
+                                <td class="px-6 py-4"><input type="text" v-model="r.carModel" @change="updateRecord(r)" placeholder="車種" class="inline-edit text-xs mb-1"><input type="text" v-model="r.carColor" @change="updateRecord(r)" placeholder="顏色" class="inline-edit text-[10px] text-slate-500"></td>
+                                <td class="px-6 py-4"><input type="text" v-model="r.item" @change="updateRecord(r)" placeholder="項目與備註" class="inline-edit text-sm"></td>
+                                <td class="px-6 py-4 font-black text-blue-600"><input type="number" v-model.number="r.price" @change="updateRecord(r)" class="inline-edit text-blue-600 font-black"></td>
+                                <td class="px-6 py-4 text-center"><input type="checkbox" v-model="r.isUnpaid" @change="updateRecord(r)" class="w-6 h-6 accent-rose-500 cursor-pointer"></td>
+                                <td class="px-6 py-4 text-center"><button @click.stop.prevent="deleteItem('records', r.id)" class="text-rose-300 hover:text-rose-500 transition"><i class="fas fa-trash-alt"></i></button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 3. 預約清單 -->
+            <div v-if="currentTab === 'appointments'" class="animate-fadeIn">
+                <div class="bg-white p-6 rounded-3xl shadow-sm mb-8">
+                    <div class="flex justify-between items-center mb-6"><h3 class="text-2xl font-black text-slate-800">預約調度日曆 (支援拖移與快速刪除)</h3><button @click="showPreview('appointments')" class="bg-slate-800 text-white px-6 py-2 rounded-xl font-black no-print">列印預約明細</button></div>
+                    <div class="calendar-grid mb-2"><div v-for="w in ['日','一','二','三','四','五','六']" :key="w" class="text-center font-black text-slate-400 text-xs py-2">週{{ w }}</div></div>
+                    <div class="calendar-grid">
+                        <div v-for="day in calendarDays" :key="day.date" 
+                            :class="[day.isCurrentMonth ? '' : 'other-month', day.isToday ? 'today' : '']" 
+                            class="day-cell"
+                            @dragover.prevent="dragOver($event)"
+                            @dragleave="dragLeave($event)"
+                            @drop="onDrop($event, day.date)">
+                            
+                            <div class="text-xs font-black mb-1 flex justify-between"><span :class="day.isToday ? 'text-blue-500' : 'text-slate-400'">{{ day.day }}</span><span v-if="day.appts.length > 0" class="badge-count">{{ day.appts.length }}</span></div>
+                            <div class="space-y-1 h-16 overflow-y-auto">
+                                <div v-for="appt in day.appts" :key="appt.id" 
+                                    :draggable="!appt.isPeriodic" 
+                                    @dragstart="onDragStart($event, appt)"
+                                    class="appt-item group text-[9px] p-1 rounded font-bold flex justify-between items-center" 
+                                    :class="appt.isPeriodic ? 'bg-orange-100 text-orange-700 border-l-2 border-orange-500' : 'bg-blue-100 text-blue-700'">
+                                    
+                                    <span class="truncate pointer-events-none">{{ appt.time }} {{ appt.customer }}</span>
+                                    <button @click.stop.prevent="deleteItem('appointments', appt.id)" class="text-rose-500 hover:text-rose-700 px-1" title="刪除預約"><i class="fas fa-times-circle"></i></button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="bg-white p-8 rounded-3xl shadow-sm border-2 border-dashed border-orange-200 no-print mb-8">
+                    <h4 class="font-black text-orange-600 mb-4">預約登記</h4>
+                    <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+                        <input type="date" v-model="newAppt.date" class="border p-3 rounded-xl font-bold text-slate-700">
+                        <input type="time" v-model="newAppt.time" class="border p-3 rounded-xl font-bold text-slate-700">
+                        <input type="text" v-model="newAppt.customer" placeholder="客戶名稱" class="border p-3 rounded-xl">
+                        <input type="text" v-model="newAppt.carModel" placeholder="車種" class="border p-3 rounded-xl">
+                        <input type="text" v-model="newAppt.item" placeholder="施工項目與備註" class="border p-3 rounded-xl">
+                    </div>
+                    <div class="p-4 bg-slate-50 rounded-2xl flex flex-wrap gap-4 items-center">
+                        <span class="text-xs font-black text-slate-400 italic">週期設定：</span>
+                        <div v-for="(dayName, idx) in ['一','二','三','四','五','六','日']" :key="idx" class="flex items-center space-x-2">
+                            <input type="checkbox" v-model="newAppt.periodicDays" :value="[1,2,3,4,5,6,0][idx]" class="w-5 h-5 accent-orange-500">
+                            <span class="text-xs font-bold">週{{ dayName }}</span>
+                        </div>
+                        <button @click="addAppointment" class="bg-blue-600 text-white px-10 py-3 rounded-2xl font-black ml-auto shadow-lg">確認預約</button>
+                    </div>
+                </div>
+
+                <div class="bg-white rounded-3xl shadow-sm overflow-hidden no-print">
+                    <div class="bg-slate-50 px-6 py-4 border-b border-slate-100"><h4 class="font-black text-slate-700">預約清單明細 (直接點擊欄位即可原地修改)</h4></div>
+                    <table class="w-full text-left">
+                        <thead class="bg-slate-100 text-slate-400 text-[10px] font-black"><tr><th class="px-6 py-3">預約日期</th><th class="px-6 py-3">時間</th><th class="px-6 py-3">客戶名稱</th><th class="px-6 py-3">車種/項目備註</th><th class="px-6 py-3 text-center">週期設定 (點擊切換)</th><th class="px-6 py-3 text-center">操作</th></tr></thead>
+                        <tbody class="divide-y divide-slate-50">
+                            <tr v-for="a in sortedAppointments" :key="a.id" class="hover:bg-slate-50">
+                                <td class="px-6 py-4"><input type="date" v-model="a.date" @change="updateAppt(a)" class="inline-edit font-bold text-xs"></td>
+                                <td class="px-6 py-4 text-blue-500 font-bold"><input type="time" v-model="a.time" @change="updateAppt(a)" class="inline-edit"></td>
+                                <td class="px-6 py-4"><input type="text" v-model="a.customer" @change="updateAppt(a)" class="inline-edit font-black"></td>
+                                <td class="px-6 py-4"><input type="text" v-model="a.carModel" @change="updateAppt(a)" placeholder="車種" class="inline-edit text-xs mb-1"><input type="text" v-model="a.item" @change="updateAppt(a)" placeholder="項目與備註" class="inline-edit text-[10px] text-slate-400"></td>
+                                <td class="px-6 py-4">
+                                    <div class="flex justify-center gap-1">
+                                        <button v-for="(w, idx) in ['日','一','二','三','四','五','六']" :key="idx" @click="toggleApptDay(a, idx)" :class="(a.periodicDays || []).includes(idx) ? 'bg-orange-500 text-white' : 'bg-slate-100 text-slate-400'" class="w-6 h-6 rounded text-[10px] font-bold transition-all shadow-sm">{{ w }}</button>
+                                    </div>
+                                </td>
+                                <td class="px-6 py-4 text-center"><button @click.stop.prevent="deleteItem('appointments', a.id)" class="text-rose-300 hover:text-rose-500 transition"><i class="fas fa-trash-alt"></i></button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 4. 固定開支 -->
+            <div v-if="currentTab === 'expenses'" class="animate-fadeIn">
+                <div class="bg-white p-6 rounded-3xl shadow-sm mb-8 no-print border-b-4 border-slate-700">
+                    <div class="flex justify-between items-center mb-6"><h3 class="font-black text-lg text-slate-700">固定開支記帳</h3><button @click="showPreview('expenses')" class="bg-slate-100 text-slate-600 px-6 py-2 rounded-xl font-bold">生成詳細支出報表</button></div>
+                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                        <input type="date" v-model="newExpense.date" class="border p-3 rounded-xl bg-slate-50 font-bold text-slate-700">
+                        <select v-model="newExpense.category" class="border p-3 rounded-xl bg-slate-50 font-bold"><option>藥水/耗材</option><option>薪水</option><option>店租</option><option>勞健保</option><option>水電費</option><option>其他</option></select>
+                        <input type="number" v-model="newExpense.amount" placeholder="金額" class="border p-3 rounded-xl font-black text-rose-500">
+                        <button @click="addExpense" class="bg-slate-800 text-white rounded-xl font-black">儲存支出</button>
+                    </div>
+                </div>
+                <div class="bg-white rounded-3xl shadow-sm overflow-hidden">
+                    <table class="w-full text-left">
+                        <thead class="bg-slate-50 text-slate-400 text-xs font-black"><tr><th class="px-6 py-4">日期</th><th class="px-6 py-4">類別</th><th class="px-6 py-4 text-right">金額</th><th class="px-6 py-4">備註</th><th class="px-6 py-4 text-center">操作</th></tr></thead>
+                        <tbody class="divide-y divide-slate-100">
+                            <tr v-for="e in filteredExpenses" :key="e.id" class="hover:bg-slate-50">
+                                <td class="px-6 py-4"><input type="date" v-model="e.date" @change="updateExpense(e)" class="inline-edit font-bold text-xs text-slate-600"></td>
+                                <td class="px-6 py-4"><select v-model="e.category" @change="updateExpense(e)" class="inline-edit font-bold"><option>藥水/耗材</option><option>薪水</option><option>店租</option><option>勞健保</option><option>水電費</option><option>其他</option></select></td>
+                                <td class="px-6 py-4 font-black text-rose-500"><input type="number" v-model.number="e.amount" @change="updateExpense(e)" class="inline-edit text-rose-500 font-black text-right"></td>
+                                <td class="px-6 py-4"><input type="text" v-model="e.notes" @change="updateExpense(e)" placeholder="支出備註" class="inline-edit text-sm text-slate-500"></td>
+                                <td class="px-6 py-4 text-center"><button @click.stop.prevent="deleteItem('expenses', e.id)" class="text-rose-300 hover:text-rose-500 transition"><i class="fas fa-trash-alt"></i></button></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 5. 設定 -->
+            <div v-if="currentTab === 'settings'" class="animate-fadeIn max-w-xl mx-auto">
+                <div class="bg-white p-10 rounded-[3rem] shadow-xl border-t-8 border-orange-400 text-center">
+                    <h2 class="text-3xl font-black mb-8">經營目標設定</h2>
+                    <div class="space-y-8">
+                        <div><label class="block font-black text-slate-500 text-sm mb-2">本月預期營業額 (NTD)</label><input type="number" v-model="goal.targetRevenue" class="w-full bg-slate-50 border-none p-6 rounded-3xl text-4xl font-black text-blue-600 text-center outline-none"></div>
+                        <div><label class="block font-black text-slate-500 text-sm mb-2">本月預計上班天數</label><input type="number" v-model="goal.workingDays" class="w-full bg-slate-50 border-none p-6 rounded-3xl text-4xl font-black text-orange-500 text-center outline-none"></div>
+                        <button @click="saveGoal" class="w-full vibrant-gradient text-white py-6 rounded-[2rem] font-black text-2xl shadow-xl">儲存設定</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- 報表預覽 (詳細化處理) -->
+        <div v-if="previewType" class="preview-overlay no-print">
+            <div class="preview-paper relative">
+                <div class="absolute -top-16 right-0 flex space-x-4 no-print">
+                    <button @click="window.print()" class="bg-blue-600 text-white px-10 py-3 rounded-2xl font-black shadow-2xl">列印/轉存PDF</button>
+                    <button @click="previewType = null" class="bg-white text-slate-800 px-10 py-3 rounded-2xl font-black shadow-2xl">返回</button>
+                </div>
+                <div class="border-b-8 border-slate-900 pb-8 mb-8 flex justify-between items-end">
+                    <div><h1 class="text-5xl font-black italic uppercase">AS COATING</h1><p class="font-black mt-2 text-xl">{{ previewTitle }}</p></div>
+                    <div class="text-right font-bold text-slate-400">查詢月份：{{ currentYear }}/{{ currentMonth + 1 }}<br>列印日期：{{ new Date().toLocaleDateString() }}</div>
+                </div>
+                
+                <!-- 總覽報表 -->
+                <div v-if="previewType === 'dashboard'">
+                    <div class="grid grid-cols-3 gap-4 mb-8">
+                        <div class="border-2 p-4 text-center font-bold">當月總營收<br><span class="text-2xl">${{ stats.totalRevenue.toLocaleString() }}</span></div>
+                        <div class="border-2 p-4 text-center font-bold">當月總支出<br><span class="text-2xl">${{ stats.totalCost.toLocaleString() }}</span></div>
+                        <div class="border-2 p-4 text-center font-bold">估算淨利潤<br><span class="text-2xl text-emerald-600">${{ (stats.totalRevenue - stats.totalCost).toLocaleString() }}</span></div>
+                    </div>
+                    <div class="bg-slate-50 p-6 border-2 rounded-xl">
+                        <h3 class="font-black mb-4 text-lg border-b-2 pb-2">營運深度分析數據</h3>
+                        <div class="grid grid-cols-2 gap-4">
+                            <p class="font-bold text-blue-700">● 單車平均實收客單：${{ stats.avgTicket.toLocaleString() }}</p>
+                            <p class="font-bold">● 目標達成進度：{{ stats.goalPercent }}%</p>
+                            <p class="font-bold">● 本月總進場車輛：{{ stats.totalCases }} 台</p>
+                            <p class="font-bold text-rose-600">● 未收帳餘額：${{ stats.unpaidAmount.toLocaleString() }}</p>
+                            <p class="font-bold text-slate-500">● 每日應達標業績：${{ Math.round(goal.targetRevenue / goal.workingDays).toLocaleString() }}</p>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- 工作紀錄/對帳單報表 -->
+                <div v-if="previewType === 'records'">
+                    <p class="text-lg font-bold mb-4" v-if="isReconciling">精準對帳客戶：{{ searchKeyword }}</p>
+                    <table class="w-full border-collapse border-2 text-sm">
+                        <thead><tr class="bg-slate-50 font-bold"><th class="border-2 p-2">日期</th><th class="border-2 p-2">客戶</th><th class="border-2 p-2">車牌</th><th class="border-2 p-2">車種/顏色</th><th class="border-2 p-2">項目與備註</th><th class="border-2 p-2 text-center">狀態</th><th class="border-2 p-2 text-right">金額</th></tr></thead>
+                        <tbody><tr v-for="r in filteredRecords" :key="r.id"><td class="border-2 p-2 text-center">{{ r.date }}</td><td class="border-2 p-2 font-bold">{{ r.customer }}</td><td class="border-2 p-2 text-center uppercase">{{ r.carNumber }}</td><td class="border-2 p-2 text-xs">{{ r.carModel }} / {{ r.carColor }}</td><td class="border-2 p-2 text-xs">{{ r.item }}</td><td class="border-2 p-2 text-center font-bold text-xs" :class="r.isUnpaid ? 'text-rose-500' : 'text-emerald-500'">{{ r.isUnpaid ? '未收' : '已收' }}</td><td class="border-2 p-2 text-right font-black">${{ (r.price || 0).toLocaleString() }}</td></tr></tbody>
+                        <tfoot><tr class="bg-slate-100 font-black"><td colspan="6" class="border-2 p-3 text-right">清單總金額 (含未收)</td><td class="border-2 p-3 text-right text-blue-600 text-lg">${{ filteredTotalSum.toLocaleString() }}</td></tr></tfoot>
+                    </table>
+                </div>
+
+                <!-- 預約調度報表 -->
+                <div v-if="previewType === 'appointments'">
+                    <table class="w-full border-collapse border-2 text-sm">
+                        <thead><tr class="bg-slate-50 font-bold"><th class="border-2 p-2">預約日期</th><th class="border-2 p-2">時間</th><th class="border-2 p-2">客戶名稱</th><th class="border-2 p-2">車型 / 施工備註</th><th class="border-2 p-2 text-center">屬性</th></tr></thead>
+                        <tbody><tr v-for="a in sortedAppointments" :key="a.id"><td class="border-2 p-2 text-center">{{ a.date }}</td><td class="border-2 p-2 text-center font-bold text-blue-600">{{ a.time }}</td><td class="border-2 p-2 font-bold">{{ a.customer }}</td><td class="border-2 p-2 text-xs">{{ a.carModel }} / {{ a.item }}</td><td class="border-2 p-2 text-center text-xs font-bold" :class="a.isPeriodic ? 'text-orange-500' : 'text-slate-500'">{{ a.isPeriodic ? '週期' : '單次' }}</td></tr></tbody>
+                    </table>
+                </div>
+
+                <!-- 固定開支報表 -->
+                <div v-if="previewType === 'expenses'">
+                    <table class="w-full border-collapse border-2 text-sm">
+                        <thead><tr class="bg-slate-50 font-bold"><th class="border-2 p-2 text-center">支出日期</th><th class="border-2 p-2">類別</th><th class="border-2 p-2">詳細備註</th><th class="border-2 p-2 text-right">支出金額</th></tr></thead>
+                        <tbody><tr v-for="e in filteredExpenses" :key="e.id"><td class="border-2 p-2 text-center">{{ e.date }}</td><td class="border-2 p-2 font-bold">{{ e.category }}</td><td class="border-2 p-2 text-xs">{{ e.notes }}</td><td class="border-2 p-2 text-right font-black text-rose-500">${{ (e.amount || 0).toLocaleString() }}</td></tr></tbody>
+                        <tfoot><tr class="bg-slate-100 font-black"><td colspan="3" class="border-2 p-3 text-right">當月累計支出總額</td><td class="border-2 p-3 text-right text-rose-600 text-lg">${{ stats.totalCost.toLocaleString() }}</td></tr></tfoot>
+                    </table>
+                </div>
+
+                <div class="mt-40 flex justify-between px-20"><div class="text-center w-48 border-t-2 border-slate-900 pt-2 font-black text-xs uppercase">管理主管簽核</div><div class="text-center w-48 border-t-2 border-slate-900 pt-2 font-black text-xs uppercase">確認人簽名</div></div>
+            </div>
+        </div>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, collection, addDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+
+        const firebaseConfig = { apiKey: "AIzaSyCByMc_uhpLcRohiXTajQ4jWswiFXIKQLk", authDomain: "as-coating.firebaseapp.com", projectId: "as-coating", storageBucket: "as-coating.firebasestorage.app", messagingSenderId: "916931752670", appId: "1:916931752670:web:c8718876e540559f2b884f" };
+        const fbApp = initializeApp(firebaseConfig);
+        const db = getFirestore(fbApp);
+        const auth = getAuth(fbApp);
+        const appId = "as-coating-pro-final-v6";
+
+        const { createApp, ref, reactive, computed, onMounted } = Vue;
+
+        createApp({
+            setup() {
+                const currentTab = ref('dashboard');
+                const tabs = [ { id: 'dashboard', name: '店面總覽' }, { id: 'records', name: '工作紀錄' }, { id: 'appointments', name: '預約調度' }, { id: 'expenses', name: '固定開支' }, { id: 'settings', name: '目標設定' } ];
+                const records = ref([]); const appointments = ref([]); const expenses = ref([]);
+                const goal = reactive({ targetRevenue: 300000, workingDays: 26 });
+                const currentYear = ref(new Date().getFullYear()); const currentMonth = ref(new Date().getMonth());
+                const previewType = ref(null); const searchKeyword = ref(""); const cheerQuote = ref("細節決定成敗，品質成就非凡。");
+                
+                const newRecord = reactive({ date: new Date().toISOString().split('T')[0], customer: '', carNumber: '', carModel: '', carColor: '', item: '', price: null, isUnpaid: false });
+                const newAppt = reactive({ date: new Date().toISOString().split('T')[0], time: '10:00', customer: '', carModel: '', item: '', periodicDays: [] });
+                // 固定開支改為精確日期 date
+                const newExpense = reactive({ date: new Date().toISOString().split('T')[0], category: '藥水/耗材', amount: null, notes: '' });
+
+                onMounted(async () => {
+                    await signInAnonymously(auth);
+                    onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'records'), (s) => records.value = s.docs.map(d => ({ id: d.id, ...d.data() })));
+                    onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'appointments'), (s) => appointments.value = s.docs.map(d => ({ id: d.id, ...d.data() })));
+                    onSnapshot(collection(db, 'artifacts', appId, 'public', 'data', 'expenses'), (s) => expenses.value = s.docs.map(d => ({ id: d.id, ...d.data() })));
+                    const gDoc = await getDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'goal'));
+                    if (gDoc.exists()) Object.assign(goal, gDoc.data());
+                });
+
+                // 核心統計
+                const stats = computed(() => {
+                    const monthStr = `${currentYear.value}-${String(currentMonth.value + 1).padStart(2, '0')}`;
+                    const curMonthRecords = records.value.filter(r => r.date && r.date.startsWith(monthStr));
+                    const curMonthExpenses = expenses.value.filter(e => e.date && e.date.startsWith(monthStr)); // 開支改用 date
+                    const rev = curMonthRecords.reduce((s, r) => s + (Number(r.price) || 0), 0);
+                    const cost = curMonthExpenses.reduce((s, e) => s + (Number(e.amount) || 0), 0);
+                    return { totalRevenue: rev, totalCost: cost, totalCases: curMonthRecords.length, unpaidAmount: curMonthRecords.filter(r => r.isUnpaid).reduce((s, r) => s + (Number(r.price) || 0), 0), gap: Math.max(goal.targetRevenue - rev, 0), goalPercent: Math.min(Math.round((rev / goal.targetRevenue) * 100), 100) || 0, avgTicket: curMonthRecords.length ? Math.round(rev / curMonthRecords.length) : 0 };
+                });
+
+                // 工作紀錄過濾 (精準客戶搜尋)
+                const filteredRecords = computed(() => {
+                    const monthStr = `${currentYear.value}-${String(currentMonth.value + 1).padStart(2, '0')}`;
+                    let list = records.value;
+                    if (searchKeyword.value) {
+                        const k = searchKeyword.value.trim().toLowerCase();
+                        list = list.filter(r => (r.customer || '').trim().toLowerCase() === k);
+                    } else {
+                        list = list.filter(r => r.date && r.date.startsWith(monthStr));
+                    }
+                    return [...list].sort((a,b) => b.date.localeCompare(a.date));
+                });
+
+                const isReconciling = computed(() => searchKeyword.value.trim().length >= 1);
+
+                // 固定開支過濾 (依據 date)
+                const filteredExpenses = computed(() => {
+                    const monthStr = `${currentYear.value}-${String(currentMonth.value + 1).padStart(2, '0')}`;
+                    return expenses.value.filter(e => e.date && e.date.startsWith(monthStr)).sort((a,b) => b.date.localeCompare(a.date));
+                });
+
+                // 預約清單過濾
+                const sortedAppointments = computed(() => {
+                    const monthStr = `${currentYear.value}-${String(currentMonth.value + 1).padStart(2, '0')}`;
+                    return appointments.value.filter(a => (a.date && a.date.startsWith(monthStr)) || a.isPeriodic).sort((a,b) => `${a.date} ${a.time}`.localeCompare(`${b.date} ${b.time}`));
+                });
+
+                // 日曆渲染
+                const calendarDays = computed(() => {
+                    const days = [];
+                    const firstDayDate = new Date(currentYear.value, currentMonth.value, 1);
+                    const firstDayOfWeek = firstDayDate.getDay(); 
+                    const prevMonthLastDay = new Date(currentYear.value, currentMonth.value, 0).getDate();
+                    for (let i = firstDayOfWeek - 1; i >= 0; i--) { 
+                        days.push({ day: prevMonthLastDay - i, date: '', isCurrentMonth: false, appts: [] }); 
+                    }
+                    const lastDayDate = new Date(currentYear.value, currentMonth.value + 1, 0);
+                    for (let i = 1; i <= lastDayDate.getDate(); i++) {
+                        const d = new Date(currentYear.value, currentMonth.value, i); 
+                        const ds = d.toISOString().split('T')[0];
+                        const dow = d.getDay(); // 0-6
+                        const dayAppts = appointments.value.filter(a => (a.date === ds) || (a.isPeriodic && (a.periodicDays || []).includes(dow)));
+                        days.push({ day: i, date: ds, isCurrentMonth: true, isToday: ds === new Date().toISOString().split('T')[0], appts: dayAppts });
+                    }
+                    return days;
+                });
+
+                // Firebase CRUD 操作
+                const addRecord = async () => { if (!newRecord.customer || !newRecord.price) return; await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'records'), { ...newRecord }); Object.assign(newRecord, { customer: '', carNumber: '', carModel: '', carColor: '', item: '', price: null, isUnpaid: false }); };
+                const updateRecord = async (r) => { if(r.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'records', r.id), { ...r }); };
+                const addAppointment = async () => { if (!newAppt.customer) return; await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'appointments'), { ...newAppt, isPeriodic: newAppt.periodicDays.length > 0 }); Object.assign(newAppt, { customer: '', carModel: '', item: '', periodicDays: [] }); };
+                const updateAppt = async (a) => { if(a.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'appointments', a.id), { ...a, isPeriodic: (a.periodicDays || []).length > 0 }); };
+                const toggleApptDay = async (a, day) => { const days = a.periodicDays || []; const newDays = days.includes(day) ? days.filter(d => d !== day) : [...days, day]; await updateAppt({ ...a, periodicDays: newDays }); };
+                const addExpense = async () => { if (!newExpense.amount) return; await addDoc(collection(db, 'artifacts', appId, 'public', 'data', 'expenses'), { ...newExpense }); newExpense.amount = null; newExpense.notes = ''; };
+                const updateExpense = async (e) => { if(e.id) await updateDoc(doc(db, 'artifacts', appId, 'public', 'data', 'expenses', e.id), { ...e }); };
+                
+                // 移除 iframe 會阻擋的 confirm，直接進行刪除確保功能正常
+                const deleteItem = async (col, id) => {
+                    if(!id) return;
+                    try {
+                        await deleteDoc(doc(db, 'artifacts', appId, 'public', 'data', col, id));
+                    } catch(err) {
+                        console.error("刪除操作失敗", err);
+                    }
+                };
+
+                // 拖放功能強化：使用 dataTransfer 傳遞 ID
+                const onDragStart = (e, appt) => {
+                    e.dataTransfer.setData('apptId', appt.id);
+                    e.dataTransfer.effectAllowed = "move";
+                };
+                const dragOver = (e) => { e.currentTarget.classList.add('drag-over-active'); };
+                const dragLeave = (e) => { e.currentTarget.classList.remove('drag-over-active'); };
+                const onDrop = async (e, targetDate) => {
+                    e.currentTarget.classList.remove('drag-over-active');
+                    const apptId = e.dataTransfer.getData('apptId');
+                    if (apptId && targetDate) {
+                        const appt = appointments.value.find(a => a.id === apptId);
+                        if (appt) {
+                            if (appt.isPeriodic) {
+                                console.log("週期性預約無法單獨拖移改變日期。");
+                            } else {
+                                appt.date = targetDate;
+                                await updateAppt(appt);
+                            }
+                        }
+                    }
+                };
+
+                const saveGoal = async () => { await setDoc(doc(db, 'artifacts', appId, 'public', 'data', 'settings', 'goal'), { ...goal }); currentTab.value = 'dashboard'; };
+                const changeMonth = (v) => { currentMonth.value += v; if (currentMonth.value > 11) { currentMonth.value = 0; currentYear.value++; } else if (currentMonth.value < 0) { currentMonth.value = 11; currentYear.value--; } };
+
+                return { 
+                    currentTab, tabs, stats, filteredRecords, filteredExpenses, 
+                    filteredTotalSum: computed(() => filteredRecords.value.reduce((s,r) => s + (Number(r.price) || 0), 0)), 
+                    filteredTotalUnpaid: computed(() => filteredRecords.value.filter(r => r.isUnpaid).reduce((s,r) => s + (Number(r.price) || 0), 0)), 
+                    calendarDays, sortedAppointments, currentYear, currentMonth, newRecord, newAppt, newExpense, previewType, searchKeyword, goal, cheerQuote, isReconciling,
+                    previewTitle: computed(() => ({ records: '客戶對帳與工作明細表', appointments: '預約排程調度明細表', expenses: '固定支出結算分析表', dashboard: '營運成果總覽報告' }[previewType.value])), 
+                    addRecord, updateRecord, addAppointment, updateAppt, toggleApptDay, addExpense, updateExpense, deleteItem, 
+                    onDragStart, dragOver, dragLeave, onDrop,
+                    saveGoal, changeMonth, showPreview: (t) => previewType.value = t, jumpToUnpaid: () => { currentTab.value = 'records'; searchKeyword.value = ''; }, window 
+                };
+            }
+        }).mount('#app');
+    </script>
+</body>
+</html>
